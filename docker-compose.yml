@@ -1,0 +1,120 @@
+version: '3.8'
+
+services:
+  # 主应用服务
+  app:
+    build: .
+    container_name: chainlit-rag-app
+    ports:
+      - "8000:8000" # Chainlit前端
+      - "5001:5000" # Flask API
+    environment:
+      # 数据库配置
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=chainlit_rag
+      - POSTGRES_USER=rag_user
+      - POSTGRES_PASSWORD=rag_password
+
+      # Redis配置
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=redis_password
+
+      # OpenAI配置
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=gpt-3.5-turbo
+      - OPENAI_EMBEDDING_MODEL=text-embedding-ada-002
+
+      # 应用配置
+      - APP_MODE=docker
+      - API_BASE_URL=http://localhost:5000
+      - JWT_SECRET=docker-jwt-secret-change-in-production
+      - VECTOR_DB_TYPE=faiss
+      - FILE_UPLOAD_PATH=/app/uploads
+      - VECTOR_INDEX_PATH=/app/data/vector_index
+
+      # 日志配置
+      - LOG_LEVEL=INFO
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./data:/app/data # 向量数据持久化
+      - ./uploads:/app/uploads # 文件上传持久化
+      - ./logs:/app/logs # 日志持久化
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    networks:
+      - rag-network
+
+  # PostgreSQL数据库
+  postgres:
+    image: postgres:15-alpine
+    container_name: chainlit-rag-postgres
+    environment:
+      - POSTGRES_DB=chainlit_rag
+      - POSTGRES_USER=rag_user
+      - POSTGRES_PASSWORD=rag_password
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432" # 仅开发时暴露，生产环境可以移除
+    restart: unless-stopped
+    networks:
+      - rag-network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U rag_user -d chainlit_rag" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis缓存
+  redis:
+    image: redis:7-alpine
+    container_name: chainlit-rag-redis
+    command: redis-server --requirepass redis_password --appendonly yes
+    environment:
+      - REDIS_PASSWORD=redis_password
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379" # 仅开发时暴露，生产环境可以移除
+    restart: unless-stopped
+    networks:
+      - rag-network
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "redis_password", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 可选：Nginx反向代理（生产环境推荐）
+  nginx:
+    image: nginx:alpine
+    container_name: chainlit-rag-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf
+      - ./docker/ssl:/etc/nginx/ssl # SSL证书目录
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - rag-network
+    profiles:
+      - production # 只在生产环境启动
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  rag-network:
+    driver: bridge

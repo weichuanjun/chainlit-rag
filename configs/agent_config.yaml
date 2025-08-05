@@ -1,0 +1,155 @@
+# Agent工作流配置文件
+# 支持可扩展的Agent流程定义
+
+agent_workflows:
+  # 默认RAG工作流
+  default_rag:
+    name: "默认RAG助手"
+    description: "基础的检索增强生成助手"
+    steps:
+      - name: "query_preprocessing"
+        type: "preprocessing"
+        config:
+          max_length: 500
+          language_detection: true
+          
+      - name: "vector_search"
+        type: "retrieval"
+        config:
+          top_k: 5
+          similarity_threshold: 0.7
+          search_type: "semantic"
+          
+      - name: "context_filtering"
+        type: "filtering"
+        config:
+          max_context_length: 2000
+          relevance_score_threshold: 0.6
+          
+      - name: "response_generation"
+        type: "generation"
+        config:
+          model: "gpt-3.5-turbo"
+          temperature: 0.7
+          max_tokens: 1000
+          system_prompt: |
+            你是一个专业的知识库助手。请基于提供的上下文信息准确回答用户问题。
+            如果上下文中没有相关信息，请明确说明。
+
+  # 分析型Agent工作流
+  analytical_agent:
+    name: "分析型助手"
+    description: "专门用于数据分析和深度解答"
+    steps:
+      - name: "query_analysis"
+        type: "analysis"
+        config:
+          intent_detection: true
+          entity_extraction: true
+          
+      - name: "multi_step_retrieval"
+        type: "retrieval"
+        config:
+          search_rounds: 3
+          top_k_per_round: 3
+          expand_query: true
+          
+      - name: "evidence_aggregation"
+        type: "aggregation"
+        config:
+          evidence_ranking: true
+          contradiction_detection: true
+          
+      - name: "structured_response"
+        type: "generation"
+        config:
+          model: "gpt-4"
+          temperature: 0.3
+          response_format: "structured"
+          system_prompt: |
+            你是一个分析专家。请基于检索到的证据进行深度分析，
+            提供结构化的回答，包括：
+            1. 主要发现
+            2. 支持证据
+            3. 可能的局限性
+            4. 相关建议
+
+  # 对话型Agent工作流  
+  conversational_agent:
+    name: "对话型助手"
+    description: "支持多轮对话的友好助手"
+    steps:
+      - name: "conversation_context"
+        type: "context_management"
+        config:
+          history_window: 10
+          context_compression: true
+          
+      - name: "intent_routing"
+        type: "routing"
+        config:
+          intents:
+            - "question_answering"
+            - "document_search"
+            - "clarification"
+            - "casual_chat"
+            
+      - name: "adaptive_retrieval"
+        type: "retrieval"
+        config:
+          adaptive_k: true
+          conversation_aware: true
+          
+      - name: "personalized_response"
+        type: "generation"
+        config:
+          model: "gpt-3.5-turbo"
+          temperature: 0.8
+          personality: "friendly"
+          system_prompt: |
+            你是一个友好的AI助手。请保持对话的连贯性，
+            根据用户的历史对话调整回答风格。
+
+# Agent组件定义
+components:
+  preprocessing:
+    query_cleaning:
+      enabled: true
+      remove_special_chars: true
+      normalize_whitespace: true
+      
+    language_detection:
+      enabled: true
+      supported_languages: ["zh", "en"]
+      
+  retrieval:
+    vector_search:
+      embedding_model: "text-embedding-ada-002"
+      similarity_metric: "cosine"
+      
+    hybrid_search:
+      alpha: 0.7  # 语义搜索权重
+      keyword_weight: 0.3  # 关键词搜索权重
+      
+  generation:
+    response_templates:
+      default: "基于提供的信息，{answer}"
+      no_context: "抱歉，我在知识库中没有找到相关信息。"
+      unclear: "您的问题不太清楚，能否提供更多详细信息？"
+
+# 全局设置
+global_settings:
+  max_concurrent_requests: 10
+  request_timeout: 30
+  cache_enabled: true
+  cache_ttl: 3600
+  logging_level: "INFO"
+  
+  rate_limiting:
+    requests_per_minute: 60
+    requests_per_hour: 1000
+    
+  safety:
+    content_filter: true
+    max_input_length: 2000
+    max_output_length: 3000

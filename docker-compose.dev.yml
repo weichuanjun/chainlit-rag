@@ -1,0 +1,131 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: chainlit-rag-app-dev
+    ports:
+      - "8000:8000" # Chainlit前端
+      - "5001:5000" # Flask API
+    environment:
+      # 数据库配置
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=chainlit_rag
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres123
+
+      # Redis配置
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=redis123
+
+      # OpenAI配置
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-your-openai-api-key-here}
+      - OPENAI_MODEL=gpt-3.5-turbo
+      - OPENAI_EMBEDDING_MODEL=text-embedding-ada-002
+
+      # 应用配置
+      - APP_MODE=docker
+      - API_BASE_URL=http://localhost:5000
+      - JWT_SECRET=docker-jwt-secret-change-in-production
+      - VECTOR_DB_TYPE=faiss
+      - FILE_UPLOAD_PATH=/app/uploads
+      - VECTOR_INDEX_PATH=/app/data/vector_index
+
+      # 开发模式配置
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+      - FLASK_DEBUG=1
+      - CHAINLIT_DEBUG=1
+
+    volumes:
+      # 🔥 关键：挂载源代码目录，实现热重载
+      - ./frontend:/app/frontend
+      - ./backend:/app/backend
+      - ./docker:/app/docker
+      - ./configs:/app/configs
+      - ./local_config.py:/app/local_config.py
+      - ./docker/docker_config.py:/app/docker/docker_config.py
+
+      # 数据目录（持久化）
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - rag-network
+    restart: unless-stopped
+    # 开发模式启动命令
+    command: >
+      bash -c "
+        echo '🚀 开发模式启动...'
+        
+        # 等待数据库
+        while ! pg_isready -h postgres -p 5432 -U postgres; do
+          echo '等待数据库...'
+          sleep 2
+        done
+        
+        # 初始化数据库
+        python docker/init_db.py
+        
+        # 启动API服务器（后台，带自动重载）
+        python docker/integrated_server.py &
+        
+        # 等待API启动
+        sleep 5
+        
+        # 启动Chainlit（带自动重载）
+        chainlit run frontend/app.py --host 0.0.0.0 --port 8000 --watch
+      "
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: chainlit-rag-postgres-dev
+    environment:
+      POSTGRES_DB: chainlit_rag
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - rag-network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: chainlit-rag-redis-dev
+    command: redis-server --requirepass redis123
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data_dev:/data
+    networks:
+      - rag-network
+    healthcheck:
+      test: [ "CMD", "redis-cli", "--raw", "incr", "ping" ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres_data_dev:
+  redis_data_dev:
+
+
+networks:
+  rag-network:
+    driver: bridge
